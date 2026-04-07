@@ -11,7 +11,10 @@
             margin: 2rem auto;
             padding: 0 1rem;
             text-align: center;
+            transition: background-color 0.4s;
         }
+        body.winner { background-color: #16a34a; }
+        body.loser  { background-color: #dc2626; }
         #webcam-container canvas {
             display: none;
             border-radius: 8px;
@@ -31,28 +34,59 @@
             border: none;
             color: white;
             background: #2563eb;
-            margin: 1rem 0;
+            margin: 0.5rem;
         }
-        button.stop { background: #dc2626; }
-        button:hover { opacity: 0.9; }
+        button.stop    { background: #dc2626; }
+        button.play    { background: #16a34a; }
+        button.reset   { background: #6b7280; }
+        button:hover   { opacity: 0.9; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        #play-btn,
+        #reset-btn  { display: none; }
+
+        #countdown-display {
+            font-size: 4rem;
+            font-weight: bold;
+            min-height: 5rem;
+            line-height: 5rem;
+        }
+
+        #result-display {
+            margin-top: 1rem;
+        }
+        #result-display .outcome {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+        }
+        #result-display .choices {
+            font-size: 1.2rem;
+        }
     </style>
 </head>
 <body>
-    <h1>My Teachable Machine App</h1>
+    <h1>Rock Paper Scissors</h1>
 
     <button id="toggleButton" onclick="toggleCamera()">Start Camera</button>
+    <button id="play-btn" class="play" onclick="startCountdown()">Play Round</button>
 
     <div id="webcam-container"></div>
     <div id="label-container"></div>
 
+    <div id="countdown-display"></div>
+    <div id="result-display"></div>
+
+    <button id="reset-btn" class="reset" onclick="resetGame()">Play Again</button>
+
     <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
     <script>
-        // REPLACE THIS with your model URL from Teachable Machine:
         const URL = "https://teachablemachine.withgoogle.com/models/7HmAvPuIc/";
 
         let model, webcam, labelContainer, maxPredictions;
         let isRunning = false;
+        let countdownActive = false;
 
         async function init() {
             model = await tmImage.load(URL + "model.json", URL + "metadata.json");
@@ -74,6 +108,7 @@
             }
 
             isRunning = true;
+            document.getElementById("play-btn").style.display = "inline-block";
             window.requestAnimationFrame(loop);
         }
 
@@ -85,27 +120,21 @@
         }
 
         async function predict() {
-    const prediction = await model.predict(webcam.canvas);
+            const prediction = await model.predict(webcam.canvas);
 
-    // Find the class with the highest probability
-    let topClass = prediction[0];
-    for (let i = 1; i < prediction.length; i++) {
-        if (prediction[i].probability > topClass.probability) {
-            topClass = prediction[i];
+            let topClass = prediction[0];
+            for (let i = 1; i < prediction.length; i++) {
+                if (prediction[i].probability > topClass.probability) {
+                    topClass = prediction[i];
+                }
+            }
+
+            for (let i = 0; i < maxPredictions; i++) {
+                const classPrediction =
+                    prediction[i].className + ": " + prediction[i].probability.toFixed(2);
+                labelContainer.childNodes[i].innerHTML = classPrediction;
+            }
         }
-    }
-
-    // topClass.className is the winning label
-    // topClass.probability is how confident the model is
-    console.log(topClass.className, topClass.probability);
-
-    // Update the display
-    for (let i = 0; i < maxPredictions; i++) {
-        const classPrediction =
-            prediction[i].className + ": " + prediction[i].probability.toFixed(2);
-        labelContainer.childNodes[i].innerHTML = classPrediction;
-    }
-}
 
         async function toggleCamera() {
             const button = document.getElementById("toggleButton");
@@ -119,7 +148,107 @@
                 document.getElementById("webcam-container").classList.remove("active");
                 button.textContent = "Start Camera";
                 button.classList.remove("stop");
+                document.getElementById("play-btn").style.display = "none";
+                resetGame();
             }
+        }
+
+        function startCountdown() {
+            if (countdownActive) return;
+            countdownActive = true;
+
+            const playBtn = document.getElementById("play-btn");
+            const countdownEl = document.getElementById("countdown-display");
+            playBtn.disabled = true;
+            document.getElementById("result-display").innerHTML = "";
+
+            let count = 3;
+            countdownEl.textContent = count;
+
+            const interval = setInterval(() => {
+                count--;
+                if (count > 0) {
+                    countdownEl.textContent = count;
+                } else {
+                    countdownEl.textContent = "GO!";
+                    clearInterval(interval);
+                    setTimeout(() => {
+                        countdownEl.textContent = "";
+                        resolveRound();
+                    }, 600);
+                }
+            }, 1000);
+        }
+
+        async function resolveRound() {
+            const prediction = await model.predict(webcam.canvas);
+
+            let topClass = prediction[0];
+            for (let i = 1; i < prediction.length; i++) {
+                if (prediction[i].probability > topClass.probability) {
+                    topClass = prediction[i];
+                }
+            }
+
+            const userChoice = topClass.className.trim();
+            const choices = ["Rock", "Paper", "Scissors"];
+            const computerChoice = choices[Math.floor(Math.random() * choices.length)];
+
+            const outcome = determineOutcome(userChoice, computerChoice);
+            displayResult(userChoice, computerChoice, outcome);
+
+            countdownActive = false;
+            document.getElementById("play-btn").style.display = "none";
+            document.getElementById("reset-btn").style.display = "inline-block";
+        }
+
+        function determineOutcome(user, computer) {
+            const u = user.toLowerCase();
+            const c = computer.toLowerCase();
+            if (u === c) return "tie";
+            if (
+                (u === "rock"     && c === "scissors") ||
+                (u === "scissors" && c === "paper")    ||
+                (u === "paper"    && c === "rock")
+            ) return "win";
+            return "lose";
+        }
+
+        function displayResult(user, computer, outcome) {
+            const resultEl = document.getElementById("result-display");
+
+            let outcomeText = "";
+            document.body.classList.remove("winner", "loser");
+
+            if (outcome === "win") {
+                outcomeText = "Winner!";
+                document.body.classList.add("winner");
+            } else if (outcome === "lose") {
+                outcomeText = "Loser";
+                document.body.classList.add("loser");
+            } else {
+                outcomeText = "Tie";
+            }
+
+            resultEl.innerHTML = `
+                <div class="outcome">${outcomeText}</div>
+                <div class="choices">You: <strong>${user}</strong> &nbsp;|&nbsp; Computer: <strong>${computer}</strong></div>
+            `;
+        }
+
+        function resetGame() {
+            document.body.classList.remove("winner", "loser");
+            document.getElementById("result-display").innerHTML = "";
+            document.getElementById("countdown-display").textContent = "";
+            document.getElementById("reset-btn").style.display = "none";
+
+            const playBtn = document.getElementById("play-btn");
+            playBtn.disabled = false;
+            if (isRunning) {
+                playBtn.style.display = "inline-block";
+            }
+
+            countdownActive = false;
         }
     </script>
 </body>
